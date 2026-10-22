@@ -5918,6 +5918,9 @@ Así, tal cual la tengas escrita"></textarea>
       return true;
     });
 
+    // Orden alfabético A→Z por título (en español: ignora mayúsculas/minúsculas y tildes).
+    list.sort((a,b)=> (a.title||'').localeCompare(b.title||'', 'es', {sensitivity:'base', numeric:true}));
+
     if(list.length === 0){
       grid.innerHTML = '';
       const empty = document.createElement('div');
@@ -6604,7 +6607,7 @@ Así, tal cual la tengas escrita"></textarea>
   function refreshEvSongSelect(){
     const sel = document.getElementById('evAddSongSelect');
     const usedIds = new Set(eventDraftSetlist.map(it=>it.songId));
-    const options = state.songs.filter(s=>!usedIds.has(s.id));
+    const options = state.songs.filter(s=>!usedIds.has(s.id)).sort((a,b)=> (a.title||'').localeCompare(b.title||'', 'es', {sensitivity:'base', numeric:true}));
     sel.innerHTML = '<option value="">+ Elegir canción de la biblioteca...</option>' +
       options.map(s=>`<option value="${s.id}">${escapeHtml(s.title)} (${escapeHtml(s.key||'—')})</option>`).join('');
   }
@@ -7122,7 +7125,7 @@ Así, tal cual la tengas escrita"></textarea>
   function refreshPlSongSelect(){
     const sel = document.getElementById('plAddSongSelect');
     const used = new Set(plDraftSongIds);
-    const options = state.songs.filter(s=>!used.has(s.id));
+    const options = state.songs.filter(s=>!used.has(s.id)).sort((a,b)=> (a.title||'').localeCompare(b.title||'', 'es', {sensitivity:'base', numeric:true}));
     sel.innerHTML = '<option value="">+ Elegir canción de la biblioteca...</option>' +
       options.map(s=>`<option value="${s.id}">${escapeHtml(s.title)} (${escapeHtml(s.key||'—')})</option>`).join('');
   }
