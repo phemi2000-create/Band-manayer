@@ -445,7 +445,9 @@
   }
   .qr-link-row{display:flex; gap:8px; max-width:420px;}
   .qr-link-row input{flex:1; background:var(--ink-3); border:1px solid var(--border); color:var(--text-dim); padding:8px 10px; border-radius:var(--radius-s); font-size:12px; font-family:var(--font-mono);}
-  .qr-code-box{background:#fff; padding:16px; border-radius:12px; flex:none; line-height:0;}
+  .qr-code-box{background:#fff; padding:20px; border-radius:14px; flex:none; line-height:0; box-shadow:0 0 0 1px var(--border);}
+  .qr-code-box img, .qr-code-box canvas{width:240px; height:240px; max-width:100%; image-rendering:pixelated;}
+  a.btn{text-decoration:none;}
 
   /* ---------- Eventos ---------- */
   .subtabs{display:flex; gap:6px; margin-bottom:16px;}
@@ -863,6 +865,9 @@
         <button class="btn sm ghost" id="importBtn" title="Cargar un archivo exportado desde otro dispositivo">⬆️ Importar</button>
         <input type="file" id="importFileInput" accept=".json" style="display:none;">
       </div>
+      <div class="backup-row">
+        <button class="btn sm ghost" id="seedResetBtn" title="Reemplaza lo de este celular por la versión oficial del grupo">🔄 Actualizar con la versión del grupo</button>
+      </div>
       <div class="storage-note">Todo se guarda automáticamente en este navegador.</div>
     </div>
   </aside>
@@ -914,11 +919,15 @@
         <div>
           <h4 class="section-h">📱 Comparte esta app con el grupo</h4>
           <p style="font-size:12.5px; color:var(--text-dim); max-width:420px; margin:0 0 10px;">
-            Que la escaneen con la cámara del celular para abrirla directo, o copien el enlace.
+            Que escaneen el código con la cámara del celular, o compártelo por WhatsApp. No necesitan cuenta de Claude.
           </p>
           <div class="qr-link-row">
             <input type="text" id="qrLinkInput" readonly>
             <button class="btn sm" id="qrCopyBtn">📋 Copiar</button>
+          </div>
+          <div class="qr-link-row" style="margin-top:8px;">
+            <a class="btn sm primary" id="qrWhatsappBtn" href="#" target="_blank" rel="noopener">📲 Compartir por WhatsApp</a>
+            <a class="btn sm" id="qrOpenBtn" href="#" target="_blank" rel="noopener">🔗 Abrir</a>
           </div>
         </div>
         <div id="qrCodeBox" class="qr-code-box"></div>
@@ -1499,6 +1508,7 @@ Así, tal cual la tengas escrita"></textarea>
   // (cualquiera con conocimientos técnicos podría ver el código fuente de la página).
   const LOCK_PIN_HASH = '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4';
   const LOCK_KEY = 'mbm_unlocked_v1';
+  const SHARE_URL = 'https://phemi2000-create.github.io/Band-manayer/';
 
   async function sha256Hex(text){
     const buf = new TextEncoder().encode(text);
@@ -6427,6 +6437,7 @@ Así, tal cual la tengas escrita"></textarea>
   }
   function daysFromNowISO(n){ return daysAgoISO(-n); }
 
+  let stateWasFresh = false;
   function loadState(){
     try{
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -6442,6 +6453,7 @@ Así, tal cual la tengas escrita"></textarea>
         }
       }
     }catch(e){ console.warn('No se pudo leer almacenamiento local', e); }
+    stateWasFresh = true;
     return demoData();
   }
   function saveState(){
@@ -6455,6 +6467,47 @@ Así, tal cual la tengas escrita"></textarea>
   }
 
   state = loadState();
+
+  /* ======================= ACTUALIZACIÓN DESDE LA VERSIÓN DEL GRUPO ======================= */
+  // Cada celular guarda sus datos aparte. Para que todos vean lo nuevo del grupo, al abrir la app se
+  // AGREGA el contenido oficial (el de demoData) que ese celular todavía no tenga, sin borrar nada de lo
+  // que la persona ya hizo. Si algo se borró a propósito en ese celular, no vuelve a aparecer.
+  const SEED_VERSION = '2026-10-24T01:28:05.798Z';
+  const SEED_COLS = ['songs','events','members','tasks','playlists'];
+  function normKey(t){ return String(t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim(); }
+  function seedItemKey(c, it){
+    if(c==='songs') return normKey(it.title);
+    if(c==='events') return normKey(it.titulo)+'|'+(it.fecha||'');
+    if(c==='tasks') return normKey(it.titulo);
+    return normKey(it.nombre);
+  }
+  function applySeedUpdate(){
+    try{
+      const seed = demoData();
+      const seedIds = [];
+      SEED_COLS.forEach(c=> (seed[c]||[]).forEach(it=> seedIds.push(it.id)));
+      if(stateWasFresh){
+        state.seedVersion = SEED_VERSION; state.seenSeedIds = seedIds;
+      } else if(state.seedVersion !== SEED_VERSION){
+        const seen = new Set(state.seenSeedIds || []);
+        let added = 0;
+        SEED_COLS.forEach(c=>{
+          if(!Array.isArray(state[c])) state[c] = [];
+          const haveIds = new Set(state[c].map(x=>x.id));
+          const haveKeys = new Set(state[c].map(x=>seedItemKey(c,x)));
+          (seed[c]||[]).forEach(it=>{
+            if(haveIds.has(it.id) || seen.has(it.id) || haveKeys.has(seedItemKey(c,it))) return;
+            state[c].push(it);
+            if(c==='songs' || c==='playlists') added++;
+          });
+        });
+        state.seedVersion = SEED_VERSION; state.seenSeedIds = seedIds;
+        if(added > 0) setTimeout(()=> toast('🔄 Se agregaron ' + added + ' elementos nuevos del grupo'), 2500);
+      } else return;
+      try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
+    }catch(e){ console.warn('No se pudo actualizar desde la versión del grupo', e); }
+  }
+  applySeedUpdate();
 
   /* ======================= SINCRONIZACIÓN COMPARTIDA (capacidad db) ======================= */
   // Si esta capacidad está disponible, TODOS los que abran este artefacto (dentro de la
@@ -6700,6 +6753,24 @@ Así, tal cual la tengas escrita"></textarea>
     }catch(e){
       toast('⚠️ No se pudo descargar en este navegador');
     }
+  });
+
+  document.getElementById('seedResetBtn').addEventListener('click', ()=>{
+    showConfirm(
+      'Esto reemplaza TODO lo que tienes guardado en este celular (canciones, listas, eventos, integrantes y tareas) por la versión oficial del grupo. Lo que agregaste solo aquí se perderá (puedes usar ⬇️ Exportar antes para guardarlo). ¿Continuar?',
+      ()=>{
+        const seed = demoData();
+        SEED_COLS.forEach(c=>{ state[c] = seed[c]; });
+        state.bandName = seed.bandName; bandInput.value = state.bandName;
+        const ids = []; SEED_COLS.forEach(c=> (seed[c]||[]).forEach(it=> ids.push(it.id)));
+        state.seedVersion = SEED_VERSION; state.seenSeedIds = ids;
+        saveState();
+        applyMode();
+        renderSongs(); renderEvents(); renderMembers(); refreshTaskMemberFilter(); renderTasks(); renderPlaylists(); renderInicio();
+        toast('✅ Este celular ya tiene la versión del grupo');
+      },
+      'Reemplazar todo'
+    );
   });
 
   document.getElementById('importBtn').addEventListener('click', ()=> document.getElementById('importFileInput').click());
@@ -8238,23 +8309,22 @@ Así, tal cual la tengas escrita"></textarea>
       <div class="dash-row"><span>📋 Listas</span><span>${(state.playlists||[]).length}</span></div>
     `;
 
-    // Usa la URL real donde se está viendo la página (funciona igual si vive en claude.ai, en GitHub
-    // Pages, o en cualquier otro lugar) — con un enlace de respaldo por si el navegador diera algo raro.
-    let link = 'https://claude.ai/artifact/XAoZL9MHtXk3PY89k69mpC';
-    try{
-      const here = window.location.href;
-      if(/^https?:\/\//.test(here)) link = here;
-    }catch(e){}
+    // Enlace público oficial de la app (GitHub Pages): lo abre cualquiera, sin cuenta de Claude.
+    const link = SHARE_URL;
     document.getElementById('qrLinkInput').value = link;
     const qrBox = document.getElementById('qrCodeBox');
     qrBox.innerHTML = '';
     try{
       if(window.QRCode){
-        new QRCode(qrBox, { text: link, width:200, height:200, colorDark:'#000000', colorLight:'#ffffff', correctLevel: QRCode.CorrectLevel.H });
+        new QRCode(qrBox, { text: link, width:240, height:240, colorDark:'#000000', colorLight:'#ffffff', correctLevel: QRCode.CorrectLevel.Q });
       } else {
         qrBox.innerHTML = '<div style="color:#14161B; font-size:11px; padding:10px; max-width:140px;">No se pudo cargar el generador de QR.</div>';
       }
     }catch(e){ console.warn('Error generando QR', e); }
+    const wa = document.getElementById('qrWhatsappBtn');
+    if(wa) wa.href = 'https://wa.me/?text=' + encodeURIComponent('🎵 Abre nuestra app de la banda: ' + link + ' (PIN: 1234)');
+    const op = document.getElementById('qrOpenBtn');
+    if(op) op.href = link;
   }
   document.getElementById('qrCopyBtn').addEventListener('click', ()=>{
     const input = document.getElementById('qrLinkInput');
@@ -8597,6 +8667,28 @@ Así, tal cual la tengas escrita"></textarea>
     }
   }
 
+  /* ======================= VERSIÓN NUEVA DEL CÓDIGO (caché de celulares) ======================= */
+  const BUILD_VERSION = '2026-10-24-b2';
+  async function checkForNewBuild(){
+    try{
+      if(!/^https?:$/.test(location.protocol) || !/github\.io$/.test(location.hostname)) return;
+      const res = await fetch(location.origin + location.pathname + '?v=' + Date.now(), {cache:'no-store'});
+      if(!res.ok) return;
+      const txt = await res.text();
+      const m = txt.match(new RegExp("BUILD_" + "VERSION = '([0-9A-Za-z._-]+)'"));
+      if(!m || m[1] === BUILD_VERSION) return;
+      const flag = 'mbm_reloaded_for';
+      let done = null;
+      try{ done = sessionStorage.getItem(flag); }catch(e){}
+      if(done !== m[1]){
+        try{ sessionStorage.setItem(flag, m[1]); }catch(e){}
+        location.replace(location.pathname + '?v=' + encodeURIComponent(m[1]) + location.hash);
+      } else {
+        toast('🔄 Hay una versión nueva: cierra la app y vuelve a abrirla');
+      }
+    }catch(e){ /* sin internet o bloqueado: seguimos con la versión actual */ }
+  }
+
   /* ======================= INICIO ======================= */
   applyMode();
   renderTopbarActions();
@@ -8610,6 +8702,7 @@ Así, tal cual la tengas escrita"></textarea>
   syncLyricsUI();
   initDbSync();
   initDownloads();
+  checkForNewBuild();
 })();
 </script>
 </body>
